@@ -1,4 +1,5 @@
 import functools
+import itertools
 from gettext import gettext as _
 import logging
 import os
@@ -360,14 +361,24 @@ def _handle_package(repo, type_id, unit_key, metadata, file_path, conduit, confi
     :raises PulpCodedException PLP1005: if the checksum type from the user is not recognized
     :raises PulpCodedException PLP1013: if the checksum value from the user does not validate
     """
+    # metadata can be None
+    metadata = metadata or {}
+
+    rpm_data = dict()
+    # Update the RPM-extracted data with anything additional the user specified.
+    # Only do so if they specified a valid field, and do not overwrite
+    # extracted ones.
+    rpm_data.update(metadata or {})
+    rpm_data.update(unit_key or {})
+
+    for k, v in itertools.chain(metadata.iteritems(), unit_key.iteritems()):
+        if k in self.__class__._fields:
+            rpm_data[k] = v
     try:
-        rpm_data = _extract_rpm_data(type_id, file_path)
+        rpm_data.update(_extract_rpm_data(type_id, file_path))
     except:
         _LOGGER.exception('Error extracting RPM metadata for [%s]' % file_path)
         raise
-
-    # metadata can be None
-    metadata = metadata or {}
 
     model_class = plugin_api.get_unit_model_by_id(type_id)
     update_fields_inbound(model_class, unit_key or {})
@@ -392,11 +403,6 @@ def _handle_package(repo, type_id, unit_key, metadata, file_path, conduit, confi
     rpm_data['checksum'] = sums[util.TYPE_SHA256]
     # keep all available checksum values on the model
     rpm_data['checksums'] = sums
-
-    # Update the RPM-extracted data with anything additional the user specified.
-    # Allow the user-specified values to override the extracted ones.
-    rpm_data.update(metadata or {})
-    rpm_data.update(unit_key or {})
 
     # Validate the user specified data by instantiating the model
     try:
